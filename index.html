@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chrono Katipunan</title>
+    <style>
+      :root {
+        --bg: #120d0a;
+        --panel: #1f1712;
+        --ink: #f3e3c3;
+        --accent: #3fe0d0;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 8px 16px;
+        gap: 10px;
+        overflow-x: hidden;
+      }
+      #game {
+        display: block;
+        max-width: 100%;
+        max-height: calc(100vh - 24px);
+        aspect-ratio: 984 / 600;
+        image-rendering: pixelated;
+        border: 2px solid #3a2a1e;
+        border-radius: 6px;
+        background: #000;
+        touch-action: none;
+      }
+      #touch {
+        display: none;
+        width: 100%;
+        max-width: 520px;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .pad { display: grid; grid-template-columns: repeat(3, 48px); grid-template-rows: repeat(3, 48px); gap: 4px; }
+      .acts { display: grid; grid-template-columns: repeat(3, 56px); gap: 6px; }
+      #touch button {
+        font: inherit;
+        font-size: 13px;
+        color: var(--ink);
+        background: var(--panel);
+        border: 1px solid #5a4330;
+        border-radius: 8px;
+        min-height: 44px;
+        touch-action: manipulation;
+      }
+      #touch button:active { background: #3a2a1e; border-color: var(--accent); }
+      @media (pointer: coarse) {
+        #touch { display: flex; }
+        #game { max-height: calc(100vh - 200px); }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game" width="984" height="600" aria-label="Chrono Katipunan game"></canvas>
+    <div id="touch">
+      <div class="pad">
+        <span></span><button data-action="up">▲</button><span></span>
+        <button data-action="left">◀</button><button data-action="interact">E</button><button data-action="right">▶</button>
+        <span></span><button data-action="down">▼</button><span></span>
+      </div>
+      <div class="acts">
+        <button data-action="rewind">⟲ R</button>
+        <button data-action="forward">⟳ F</button>
+        <button data-action="confirm">OK</button>
+        <button data-action="select1">1</button>
+        <button data-action="select2">2</button>
+        <button data-action="select3">3</button>
+        <button data-action="select4">4</button>
+        <button data-action="buy">Buy</button>
+        <button data-action="cancel">Esc</button>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

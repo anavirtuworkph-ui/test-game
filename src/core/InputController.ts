@@ -1,0 +1,114 @@
+import type { Dir } from './types';
+
+export type Action =
+  | { type: 'move'; dir: Dir }
+  | { type: 'interact' }
+  | { type: 'confirm' }
+  | { type: 'cancel' }
+  | { type: 'rewind' }
+  | { type: 'forward' }
+  | { type: 'buy' }
+  | { type: 'select'; slot: number };
+
+const MOVE_KEYS: Record<string, Dir> = {
+  ArrowUp: 'up',
+  KeyW: 'up',
+  ArrowDown: 'down',
+  KeyS: 'down',
+  ArrowLeft: 'left',
+  KeyA: 'left',
+  ArrowRight: 'right',
+  KeyD: 'right',
+};
+
+const ACTION_KEYS: Record<string, Action> = {
+  KeyE: { type: 'interact' },
+  Space: { type: 'interact' },
+  Enter: { type: 'confirm' },
+  NumpadEnter: { type: 'confirm' },
+  Escape: { type: 'cancel' },
+  KeyR: { type: 'rewind' },
+  KeyF: { type: 'forward' },
+  KeyB: { type: 'buy' },
+};
+
+const REPEAT_DELAY_MS = 190;
+const REPEAT_INTERVAL_MS = 115;
+
+/** Translates raw keyboard / touch input into game actions. */
+export class InputController {
+  private queue: Action[] = [];
+  private heldDirs: Dir[] = [];
+  private repeatTimer = 0;
+  private readonly onKeyDown = (e: KeyboardEvent) => {
+    if (this.handleKeyDown(e.code, e.repeat)) e.preventDefault();
+  };
+  private readonly onKeyUp = (e: KeyboardEvent) => this.handleKeyUp(e.code);
+  private readonly onBlur = () => {
+    this.heldDirs = [];
+  };
+
+  attach(target: Window): void {
+    target.addEventListener('keydown', this.onKeyDown);
+    target.addEventListener('keyup', this.onKeyUp);
+    target.addEventListener('blur', this.onBlur);
+  }
+
+  detach(target: Window): void {
+    target.removeEventListener('keydown', this.onKeyDown);
+    target.removeEventListener('keyup', this.onKeyUp);
+    target.removeEventListener('blur', this.onBlur);
+  }
+
+  /** Returns true when the key is one the game uses. */
+  handleKeyDown(code: string, isRepeat = false): boolean {
+    const dir = MOVE_KEYS[code];
+    if (dir) {
+      if (!isRepeat && !this.heldDirs.includes(dir)) {
+        this.heldDirs.push(dir);
+        this.queue.push({ type: 'move', dir });
+        this.repeatTimer = REPEAT_DELAY_MS;
+      }
+      return true;
+    }
+    if (isRepeat) return code in ACTION_KEYS;
+    const digit = /^(?:Digit|Numpad)([1-9])$/.exec(code);
+    if (digit) {
+      this.queue.push({ type: 'select', slot: Number(digit[1]) - 1 });
+      return true;
+    }
+    const action = ACTION_KEYS[code];
+    if (action) {
+      this.queue.push(action);
+      return true;
+    }
+    return false;
+  }
+
+  handleKeyUp(code: string): void {
+    const dir = MOVE_KEYS[code];
+    if (dir) this.heldDirs = this.heldDirs.filter((d) => d !== dir);
+  }
+
+  /** Inject an action directly (touch buttons). */
+  press(action: Action): void {
+    this.queue.push(action);
+  }
+
+  /** Emits held-key movement repeats. */
+  update(dtMs: number): void {
+    const dir = this.heldDirs[this.heldDirs.length - 1];
+    if (!dir) return;
+    this.repeatTimer -= dtMs;
+    if (this.repeatTimer <= 0) {
+      this.queue.push({ type: 'move', dir });
+      this.repeatTimer = REPEAT_INTERVAL_MS;
+    }
+  }
+
+  drain(): Action[] {
+    const out = this.queue;
+    this.queue = [];
+    return out;
+  }
+}
