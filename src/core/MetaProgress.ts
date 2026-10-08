@@ -78,6 +78,7 @@ export interface MetaData {
   upgrades: UpgradeLevels;
   runs: number;
   wins: number;
+  tutorialDone: boolean;
 }
 
 export interface KeyValueStore {
@@ -88,7 +89,7 @@ export interface KeyValueStore {
 const STORAGE_KEY = 'chrono-katipunan/meta/v1';
 
 function freshData(): MetaData {
-  return { version: 1, chronotons: 0, blueprints: [], upgrades: {}, runs: 0, wins: 0 };
+  return { version: 1, chronotons: 0, blueprints: [], upgrades: {}, runs: 0, wins: 0, tutorialDone: false };
 }
 
 export class MetaProgress {
@@ -159,6 +160,23 @@ export class MetaProgress {
 
   unlockBlueprint(id: UpgradeId): void {
     if (!this.data.blueprints.includes(id)) this.data.blueprints.push(id);
+  }
+
+  /** Chronotons granted the first time the lesson is finished. */
+  static readonly TUTORIAL_REWARD = 10;
+
+  /** Marks the lesson complete; returns the chronotons granted (first completion only). */
+  completeTutorial(): number {
+    const reward = this.data.tutorialDone ? 0 : MetaProgress.TUTORIAL_REWARD;
+    this.data.tutorialDone = true;
+    this.data.chronotons += reward;
+    this.save();
+    return reward;
+  }
+
+  /** New players start with the lesson; everyone else goes straight into the loop. */
+  get shouldOfferTutorial(): boolean {
+    return !this.data.tutorialDone && this.data.runs === 0;
   }
 
   recordRun(victory: boolean, chronotonsEarned: number, blueprints: UpgradeId[]): void {

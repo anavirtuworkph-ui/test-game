@@ -34,6 +34,17 @@ export class CountdownTimer {
     return this.remaining / this.totalGameSeconds;
   }
 
+  /** Real-world seconds left at the current scale. */
+  get remainingRealSeconds(): number {
+    return this.remaining / this.scale;
+  }
+
+  /** Real-world time left as m:ss. */
+  formatReal(): string {
+    const total = Math.ceil(this.remainingRealSeconds);
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  }
+
   format(): string {
     const total = Math.ceil(this.remaining);
     const h = Math.floor(total / 3600);

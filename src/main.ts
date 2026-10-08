@@ -26,6 +26,8 @@ const TOUCH_ACTIONS: Record<string, Action> = {
   rewind: { type: 'rewind' },
   forward: { type: 'forward' },
   buy: { type: 'buy' },
+  tutorial: { type: 'tutorial' },
+  newRun: { type: 'newRun' },
   select1: { type: 'select', slot: 0 },
   select2: { type: 'select', slot: 1 },
   select3: { type: 'select', slot: 2 },

@@ -128,6 +128,42 @@ export const QUESTIONS: HistoryQuestion[] = [
   },
 ];
 
+/** Questions Dr. José Rizal asks in the Fort Santiago tutorial (29 December 1896). */
+export const TUTORIAL_QUESTIONS: HistoryQuestion[] = [
+  {
+    id: 'rizal-adios',
+    prompt: '"Tonight I hide my last poem in a little alcohol stove for my sister Trinidad. What will the world call it?"',
+    choices: ['Noli Me Tángere', 'Mi Último Adiós', 'A la Juventud Filipina', 'El Filibusterismo'],
+    answer: 1,
+    fact: 'Rizal left the poem untitled. It was smuggled out in the stove, and the name Mi Último Adiós was given to it only after his death.',
+  },
+  {
+    id: 'rizal-liga',
+    prompt: '"Before my exile, in July 1892, I founded a civic society in Tondo. What was it called?"',
+    choices: ['La Solidaridad', 'La Liga Filipina', 'Katipunan', 'Los Indios Bravos'],
+    answer: 1,
+    fact: 'Rizal founded La Liga Filipina on 3 July 1892. He was arrested days later and exiled to Dapitan; the Katipunan was founded on 7 July.',
+  },
+  {
+    id: 'rizal-noli',
+    prompt: '"My first novel was printed in Berlin in 1887. Its title?"',
+    choices: ['El Filibusterismo', 'Noli Me Tángere', 'Mi Último Adiós', 'Florante at Laura'],
+    answer: 1,
+    fact: 'Noli Me Tángere (Berlin, 1887) was followed by El Filibusterismo (Ghent, 1891). Florante at Laura is Francisco Balagtas\'s.',
+  },
+];
+
+/** The tutorial guide; never placed in procedurally generated runs. */
+export const RIZAL: NpcProfile = {
+  id: 'rizal',
+  name: 'Dr. José Rizal',
+  title: 'Prisoner of Fort Santiago, 29 December 1896',
+  color: '#20202a',
+  greeting: 'Every lesson I ever taught ended with a question. Humor a condemned man.',
+  thanks: 'Correct. Take this part of your machine. I have no further use for... well. Take it.',
+  questionIds: TUTORIAL_QUESTIONS.map((q) => q.id),
+};
+
 export const NPC_PROFILES: NpcProfile[] = [
   {
     id: 'bonifacio',
@@ -186,13 +222,13 @@ export const NPC_PROFILES: NpcProfile[] = [
 ];
 
 export function questionById(id: string): HistoryQuestion {
-  const q = QUESTIONS.find((x) => x.id === id);
+  const q = QUESTIONS.find((x) => x.id === id) ?? TUTORIAL_QUESTIONS.find((x) => x.id === id);
   if (!q) throw new Error(`Unknown question ${id}`);
   return q;
 }
 
 export function profileById(id: string): NpcProfile {
-  const p = NPC_PROFILES.find((x) => x.id === id);
+  const p = id === RIZAL.id ? RIZAL : NPC_PROFILES.find((x) => x.id === id);
   if (!p) throw new Error(`Unknown NPC profile ${id}`);
   return p;
 }

@@ -60,6 +60,7 @@ function approach(run: Run, target: Point[]): boolean {
 /** Plays a run to completion with perfect knowledge. Guards should be removed first. */
 export function solve(run: Run, maxRounds = 40): void {
   for (let round = 0; round < maxRounds && !run.outcome; round++) {
+    run.advanceTutorial();
     // 1. Grab every reachable pickup (shards first so we can afford time shifts).
     const pickups = run.world
       .query('pickup', 'position')
@@ -75,6 +76,7 @@ export function solve(run: Run, maxRounds = 40): void {
       if (run.world.req(e, 'npc').solved) continue;
       if (!approach(run, [run.world.req(e, 'position')])) continue;
       run.interact();
+      run.advanceTutorial();
       if (run.dialogue) {
         run.answer(run.dialogue.question.answer);
         run.handle({ type: 'confirm' });
@@ -92,6 +94,7 @@ export function solve(run: Run, maxRounds = 40): void {
       if (!dir || run.charges <= 0) continue;
       if (!approach(run, obj.tiles)) continue;
       run.shiftTime(dir);
+      run.advanceTutorial();
     }
 
     // 4. Repair cracked components and install everything at the DeLorean.

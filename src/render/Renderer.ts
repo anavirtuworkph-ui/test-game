@@ -148,15 +148,15 @@ export class Renderer {
     this.drawVortex(CANVAS_W / 2, 150, 0.18);
 
     this.text('CHRONO KATIPUNAN', CANVAS_W / 2, 26, 40, C.gold, 'center', true);
-    this.text('A time-loop roguelike  ·  Manila, 23 August 1896', CANVAS_W / 2, 74, 15, C.accent, 'center');
+    this.text('A time-loop roguelike  ·  Manila, 1896', CANVAS_W / 2, 74, 15, C.accent, 'center');
 
     this.panel(24, 108, 452, 404);
     let y = this.paragraph(
-      'Your homemade DeLorean worked... too well. It crash-landed in the fields outside Manila exactly two hours before the Cry of Pugad Lawin, the moment the Philippine Revolution begins.',
+      'Your homemade DeLorean worked... too well. Its flux condenser slipped and stranded you on 23 August 1896, two hours before the Cry of Pugad Lawin starts the Philippine Revolution. Every time those two hours run out, they begin again.',
       40, 124, 420, 13,
     );
     y = this.paragraph(
-      'Its four components are scattered across the district. Rewind or fast-forward the world, win the trust of the Katipunan with what you know of their history, and avoid the Guardia Civil. When the Cry rings out, the timeline locks forever.',
+      'Each loop scatters the machine\'s four components across a new district. Rewind or fast-forward the world, win the trust of the Katipunan with what you know of their history, and avoid the Guardia Civil. Rebuild the DeLorean before the Cry to break the loop.',
       40, y + 8, 420, 13,
     );
     y += 12;
@@ -208,9 +208,19 @@ export class Renderer {
     this.text('↑/↓ choose  ·  B build upgrade', wx + 16, 490, 11, C.dim);
     if (state.shopMessage) this.text(state.shopMessage, CANVAS_W / 2, 526, 13, C.accent, 'center');
 
+    const lesson = meta.shouldOfferTutorial;
     if (Math.floor(this.time / 600) % 2 === 0) {
-      this.text('Press ENTER or SPACE to fire up the flux condenser', CANVAS_W / 2, 556, 16, C.gold, 'center', true);
+      this.text(
+        lesson ? 'Press ENTER to begin: Fort Santiago, 29 December 1896' : 'Press ENTER or SPACE to enter the loop',
+        CANVAS_W / 2, 552, 16, C.gold, 'center', true,
+      );
     }
+    this.text(
+      lesson
+        ? 'A lesson from Dr. José Rizal  ·  N: skip straight to the loop'
+        : 'T: replay the lesson with Dr. José Rizal  ·  N: new loop',
+      CANVAS_W / 2, 578, 12, C.dim, 'center',
+    );
   }
 
   // ================================================================ result screens
@@ -219,6 +229,10 @@ export class Renderer {
     const s = state.summary;
     if (!s) return;
     const victory = state.phase === 'victory';
+    if (s.tutorial) {
+      this.drawTutorialEnd(state);
+      return;
+    }
     this.drawVortex(CANVAS_W / 2, CANVAS_H / 2, victory ? 0.35 : 0.1);
     this.text(victory ? 'BACK TO THE PRESENT' : 'LOST IN 1896', CANVAS_W / 2, 70, 40, victory ? C.accent : C.danger, 'center', true);
     this.panel(CANVAS_W / 2 - 300, 140, 600, 330);
@@ -240,10 +254,39 @@ export class Renderer {
       y += 22;
     }
     this.text(`+${s.chronotonsEarned} chronotons for the workshop`, CANVAS_W / 2, y + 10, 15, C.magenta, 'center', true);
-    if (!victory) this.text('Permadeath: the next run is a brand-new timeline. Upgrades persist.', CANVAS_W / 2, 486, 12, C.dim, 'center');
+    if (!victory) this.text('Permadeath: the next loop is a brand-new district. Upgrades persist.', CANVAS_W / 2, 486, 12, C.dim, 'center');
     if (Math.floor(this.time / 600) % 2 === 0) {
       this.text('Press ENTER or SPACE to return to the workshop', CANVAS_W / 2, 530, 16, C.gold, 'center', true);
     }
+  }
+
+  /** The jump out of Rizal's time that strands the player in the loop. */
+  private drawTutorialEnd(state: GameState): void {
+    const s = state.summary!;
+    this.drawVortex(CANVAS_W / 2, CANVAS_H / 2, 0.3);
+    this.text('29 DEC 1896  →  23 AUG 1896', CANVAS_W / 2, 56, 30, C.magenta, 'center', true);
+    this.text('THE FLUX CONDENSER SLIPS', CANVAS_W / 2, 98, 18, C.accent, 'center', true);
+    this.panel(CANVAS_W / 2 - 300, 140, 600, 330);
+    let y = this.paragraph(s.outcome.reason, CANVAS_W / 2 - 276, 160, 552, 14);
+    y = this.paragraph(
+      'Instead of the present, the DeLorean drops you four months earlier: 23 August 1896, two hours before the Cry of Pugad Lawin. The machine shakes itself apart on landing.',
+      CANVAS_W / 2 - 276, y + 12, 552, 14,
+    );
+    y = this.paragraph(
+      'And when those two hours run out, you will find yourself back at the start of them. Again.',
+      CANVAS_W / 2 - 276, y + 12, 552, 14, C.gold,
+    );
+    y = this.paragraph(
+      `In the loop the countdown is real: 2 in-game hours pass in 5 real minutes. Wrong answers and patrol sightings cost time.`,
+      CANVAS_W / 2 - 276, y + 12, 552, 12, C.dim,
+    );
+    if (s.chronotonsEarned > 0) {
+      this.text(`+${s.chronotonsEarned} chronotons for the workshop`, CANVAS_W / 2, y + 16, 15, C.magenta, 'center', true);
+    }
+    if (Math.floor(this.time / 600) % 2 === 0) {
+      this.text('Press ENTER to enter the loop', CANVAS_W / 2, 512, 16, C.gold, 'center', true);
+    }
+    this.text('Esc: back to the workshop', CANVAS_W / 2, 540, 12, C.dim, 'center');
   }
 
   // ================================================================ run
@@ -262,6 +305,7 @@ export class Renderer {
     ctx.restore();
     this.drawHud(run);
     this.drawLog(run);
+    if (run.tutorial && !run.dialogue) this.drawLessonBanner(run);
     if (run.dialogue) this.drawDialogue(run);
   }
 
@@ -434,6 +478,12 @@ export class Renderer {
           this.drawGuard(px, py, g.facing, g.stunnedMs > 0);
           break;
         }
+        case 'guide': {
+          const npc = world.req(e, 'npc');
+          const step = run.tutorial?.step?.id;
+          this.drawGuide(px, py, !npc.solved && (step === 'talk' || step === 'question'));
+          break;
+        }
         case 'npc': {
           const npc = world.req(e, 'npc');
           this.drawNpc(px, py, r.tint ?? '#888', npc.solved);
@@ -544,6 +594,35 @@ export class Renderer {
     const bob = Math.sin(this.time / 250) * 2;
     if (!solved) this.text('!', px + 12, py - 12 + bob, 14, C.gold, 'center', true);
     else this.text('✓', px + 12, py - 12, 11, C.ok, 'center', true);
+  }
+
+  /** Dr. José Rizal: black coat, white collar, parted hair, moustache. */
+  private drawGuide(px: number, py: number, beckoning: boolean): void {
+    const { ctx } = this;
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(px + 5, py + 20, 14, 3);
+    ctx.fillStyle = '#16161c';
+    ctx.fillRect(px + 6, py + 10, 12, 11);
+    ctx.fillStyle = '#f2efe6';
+    ctx.fillRect(px + 10, py + 10, 4, 4);
+    ctx.fillStyle = '#16161c';
+    ctx.fillRect(px + 11, py + 11, 2, 2);
+    ctx.fillStyle = '#2a2a33';
+    ctx.fillRect(px + 7, py + 19, 4, 4);
+    ctx.fillRect(px + 13, py + 19, 4, 4);
+    ctx.fillStyle = '#c9966b';
+    ctx.fillRect(px + 7, py + 3, 10, 8);
+    ctx.fillStyle = '#0d0d0d';
+    ctx.fillRect(px + 7, py + 1, 10, 3);
+    ctx.fillRect(px + 7, py + 1, 2, 5);
+    ctx.fillRect(px + 9, py + 8, 6, 1);
+    // A faint temporal shimmer around him. Nothing to worry about, surely.
+    const shimmer = 0.12 + 0.1 * Math.sin(this.time / 330);
+    ctx.strokeStyle = `rgba(63,224,208,${shimmer})`;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(px + 3.5, py + 0.5, 17, 22);
+    const bob = Math.sin(this.time / 250) * 2;
+    if (beckoning) this.text('!', px + 12, py - 12 + bob, 14, C.gold, 'center', true);
   }
 
   private drawCrate(px: number, py: number, state: string): void {
@@ -695,14 +774,27 @@ export class Renderer {
     this.text('CHRONO KATIPUNAN', left, 12, 13, C.gold, 'left', true);
     this.text(run.level.district, left, 30, 11, C.dim);
 
-    // Countdown
-    const low = run.timer.fraction < 0.15;
-    this.text('UNTIL THE CRY OF PUGAD LAWIN', left, 52, 10, C.dim);
-    this.text(run.timer.format(), left, 66, 30, low ? C.danger : C.accent, 'left', true);
-    ctx.fillStyle = '#2e2219';
-    ctx.fillRect(left, 102, HUD_W - 28, 6);
-    ctx.fillStyle = low ? C.danger : C.accent;
-    ctx.fillRect(left, 102, (HUD_W - 28) * run.timer.fraction, 6);
+    // Countdown: in-game time big, real time small.
+    if (run.tutorial) {
+      this.text('THE LESSON', left, 52, 10, C.dim);
+      this.text(`Step ${run.tutorial.stepNumber} / ${run.tutorial.totalSteps}`, left, 66, 26, C.accent, 'left', true);
+      this.text('no clock tonight', right, 52, 10, C.dim, 'right');
+      ctx.fillStyle = '#2e2219';
+      ctx.fillRect(left, 102, HUD_W - 28, 6);
+      ctx.fillStyle = C.accent;
+      ctx.fillRect(left, 102, ((HUD_W - 28) * run.tutorial.index) / run.tutorial.totalSteps, 6);
+    } else {
+      const low = run.timer.fraction < 0.15;
+      this.text('UNTIL THE CRY OF PUGAD LAWIN', left, 52, 10, C.dim);
+      this.text(`loop ${run.config.loop ?? 1}`, right, 52, 10, C.magenta, 'right');
+      this.text(run.timer.format(), left, 66, 30, low ? C.danger : C.accent, 'left', true);
+      this.text('real', right, 68, 9, C.dim, 'right');
+      this.text(run.timer.formatReal(), right, 80, 13, low ? C.danger : C.ink, 'right', true);
+      ctx.fillStyle = '#2e2219';
+      ctx.fillRect(left, 102, HUD_W - 28, 6);
+      ctx.fillStyle = low ? C.danger : C.accent;
+      ctx.fillRect(left, 102, (HUD_W - 28) * run.timer.fraction, 6);
+    }
 
     // Hearts and charges
     this.text('COVER', left, 118, 10, C.dim);
@@ -786,6 +878,23 @@ export class Renderer {
     this.text('Red tiles: patrol sight', left, y + 4, 10, '#d9786a');
   }
 
+  /** Objective and Rizal's current line, pinned over the river at the top of the map. */
+  private drawLessonBanner(run: Run): void {
+    const step = run.tutorial?.step;
+    if (!step) return;
+    const { ctx } = this;
+    const lines = this.wrap(`"${step.rizal}"`, MAP_PX_W - 120, 12).slice(0, 3);
+    const h = 34 + lines.length * 16;
+    ctx.fillStyle = 'rgba(16,12,10,0.9)';
+    ctx.fillRect(8, 6, MAP_PX_W - 16, h);
+    ctx.strokeStyle = C.accent;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(8.5, 6.5, MAP_PX_W - 17, h - 1);
+    this.drawGuide(20, 12, false);
+    this.text(step.objective, 56, 14, 13, C.gold, 'left', true);
+    lines.forEach((l, i) => this.text(l, 56, 34 + i * 16, 12, C.ink));
+  }
+
   private drawLog(run: Run): void {
     this.panel(0, MAP_PX_H, MAP_PX_W, LOG_H);
     const maxLines = 5;
@@ -846,7 +955,7 @@ export class Renderer {
         y += lines.length * 18 + 8;
       });
       this.text(
-        `Press 1-${dlg.question.choices.length} to answer  ·  Esc to leave  ·  wrong answers cost 5 min`,
+        `Press 1-${dlg.question.choices.length} to answer  ·  Esc to leave  ·  ${run.tutorial ? 'no penalty in the lesson' : 'wrong answers cost 5 min'}`,
         x + w / 2, y0 + h - 26, 11, C.dim, 'center',
       );
     } else {

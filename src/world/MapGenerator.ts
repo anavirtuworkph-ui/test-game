@@ -6,7 +6,7 @@ export const MAP_WIDTH = 30;
 export const MAP_HEIGHT = 20;
 
 /** How a DeLorean component is locked away this run. */
-export type ComponentStrategy = 'crate' | 'compound' | 'npc' | 'damaged';
+export type ComponentStrategy = 'crate' | 'compound' | 'npc' | 'damaged' | 'loose';
 
 export interface Rect {
   x: number;

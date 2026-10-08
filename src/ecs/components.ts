@@ -7,6 +7,7 @@ export type SpriteKind =
   | 'delorean'
   | 'guard'
   | 'npc'
+  | 'guide'
   | 'crate'
   | 'component'
   | 'shard'

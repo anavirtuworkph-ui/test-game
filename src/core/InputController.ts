@@ -8,6 +8,8 @@ export type Action =
   | { type: 'rewind' }
   | { type: 'forward' }
   | { type: 'buy' }
+  | { type: 'tutorial' }
+  | { type: 'newRun' }
   | { type: 'select'; slot: number };
 
 const MOVE_KEYS: Record<string, Dir> = {
@@ -30,6 +32,8 @@ const ACTION_KEYS: Record<string, Action> = {
   KeyR: { type: 'rewind' },
   KeyF: { type: 'forward' },
   KeyB: { type: 'buy' },
+  KeyT: { type: 'tutorial' },
+  KeyN: { type: 'newRun' },
 };
 
 const REPEAT_DELAY_MS = 190;

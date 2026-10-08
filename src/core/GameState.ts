@@ -12,6 +12,7 @@ export interface RunSummary {
   timeLeft: string;
   seed: number;
   district: string;
+  tutorial: boolean;
 }
 
 /** Chronotons awarded at the end of a run; failed runs still pay out. */
@@ -36,11 +37,20 @@ export class GameState {
     private readonly seedSource: () => number = randomSeed,
   ) {}
 
+  /** The Fort Santiago lesson with Dr. José Rizal. */
+  startTutorial(): Run {
+    this.run = new Run({ seed: 0, upgrades: {}, lockedBlueprints: [], tutorial: true });
+    this.summary = null;
+    this.phase = 'playing';
+    return this.run;
+  }
+
   startRun(seed = this.seedSource()): Run {
     this.run = new Run({
       seed,
       upgrades: { ...this.meta.data.upgrades },
       lockedBlueprints: this.meta.lockedBlueprints(),
+      loop: this.meta.data.runs + 1,
     });
     this.summary = null;
     this.phase = 'playing';
@@ -66,7 +76,10 @@ export class GameState {
       case 'victory':
       case 'defeat':
         if (this.resultLockMs > 0) return;
-        if (action.type === 'interact' || action.type === 'confirm' || action.type === 'cancel') {
+        if (this.summary?.tutorial && (action.type === 'interact' || action.type === 'confirm')) {
+          // Leaving Rizal's time drops the player straight into the loop.
+          this.startRun();
+        } else if (action.type === 'interact' || action.type === 'confirm' || action.type === 'cancel') {
           this.phase = 'start';
           this.run = null;
         }
@@ -81,8 +94,13 @@ export class GameState {
       this.shopMessage = '';
     } else if (action.type === 'buy') {
       this.buy(UPGRADES[this.shopIndex].id);
-    } else if (action.type === 'interact' || action.type === 'confirm') {
+    } else if (action.type === 'tutorial') {
+      this.startTutorial();
+    } else if (action.type === 'newRun') {
       this.startRun();
+    } else if (action.type === 'interact' || action.type === 'confirm') {
+      if (this.meta.shouldOfferTutorial) this.startTutorial();
+      else this.startRun();
     }
   }
 
@@ -108,6 +126,20 @@ export class GameState {
     const run = this.run;
     if (!run || !run.outcome) return;
     const victory = run.outcome.victory;
+    if (run.tutorial) {
+      this.summary = {
+        outcome: run.outcome,
+        stats: { ...run.stats },
+        chronotonsEarned: this.meta.completeTutorial(),
+        timeLeft: '',
+        seed: 0,
+        district: run.level.district,
+        tutorial: true,
+      };
+      this.phase = 'victory';
+      this.resultLockMs = 900;
+      return;
+    }
     const chronotonsEarned = computeReward(run.stats, victory, run.timer.remainingSeconds);
     this.meta.recordRun(victory, chronotonsEarned, run.stats.blueprints);
     this.summary = {
@@ -117,6 +149,7 @@ export class GameState {
       timeLeft: run.timer.format(),
       seed: run.config.seed,
       district: run.level.district,
+      tutorial: false,
     };
     this.phase = victory ? 'victory' : 'defeat';
     this.resultLockMs = 900;

@@ -3,7 +3,7 @@ import { CountdownTimer } from '../src/core/CountdownTimer';
 import { GameState, computeReward } from '../src/core/GameState';
 import { InputController } from '../src/core/InputController';
 import { MetaProgress, type KeyValueStore } from '../src/core/MetaProgress';
-import { Run, TIME_SCALE } from '../src/game/Run';
+import { BASE_MINUTES, REAL_MINUTES, Run, TIME_SCALE } from '../src/game/Run';
 import { removeGuards, solve } from './solver';
 
 class MemoryStore implements KeyValueStore {
@@ -21,6 +21,7 @@ describe('CountdownTimer', () => {
     const t = new CountdownTimer(7200, 20);
     t.update(1000);
     expect(t.remainingSeconds).toBe(7180);
+    expect(t.formatReal()).toBe('5:59');
     t.penalize(10);
     expect(t.remainingSeconds).toBe(6580);
     t.penalize(-1000);
@@ -47,6 +48,23 @@ describe('InputController', () => {
     input.handleKeyUp('KeyW');
     input.update(400);
     expect(input.drain()).toEqual([]);
+  });
+});
+
+describe('Loop clock', () => {
+  it('runs 2 in-game hours in 5 real minutes', () => {
+    expect(BASE_MINUTES).toBe(120);
+    expect(REAL_MINUTES).toBe(5);
+    const run = new Run({ seed: 1, upgrades: {}, lockedBlueprints: [] });
+    expect(run.timer.totalGameSeconds).toBe(2 * 3600);
+    expect(run.timer.formatReal()).toBe('5:00');
+    removeGuards(run);
+    for (let t = 0; t < 4 * 60 * 1000 + 59_000; t += 1000) run.update(1000);
+    expect(run.outcome).toBeNull();
+    expect(Math.round(run.timer.remainingRealSeconds)).toBe(1);
+    run.update(1000);
+    expect(run.outcome?.victory).toBe(false);
+    expect(TIME_SCALE).toBe(24);
   });
 });
 
@@ -99,8 +117,10 @@ describe('GameState', () => {
     const store = new MemoryStore();
     const gs = new GameState(new MetaProgress(store), () => 777);
     expect(gs.phase).toBe('start');
+    gs.meta.data.tutorialDone = true;
     gs.handle({ type: 'confirm' });
     expect(gs.phase).toBe('playing');
+    expect(gs.run!.tutorial).toBeNull();
     const run = gs.run!;
     removeGuards(run);
     solve(run);

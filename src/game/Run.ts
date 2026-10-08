@@ -19,12 +19,16 @@ import { NPC_PROFILES, profileById, type HistoryQuestion } from '../puzzles/Hist
 import { PuzzleSystem, createTimeObject, stateId, type TimeDirection } from '../puzzles/PuzzleSystem';
 import { generateLevel, type GeneratedLevel } from '../world/MapGenerator';
 import type { TileMap } from '../world/TileMap';
+import { TUTORIAL_CHECKPOINT, buildTutorialLevel } from '../world/TutorialLevel';
 import { Inventory, isPristine, makeComponentItem } from './Inventory';
+import { TUTORIAL_STEPS, Tutorial, type TutorialStepId } from './Tutorial';
 
 /** In-game minutes until the Cry of Pugad Lawin. */
 export const BASE_MINUTES = 120;
-/** In-game seconds per real second: 2 hours plays out in 6 real minutes. */
-export const TIME_SCALE = 20;
+/** Real minutes the loop lasts at the base countdown. */
+export const REAL_MINUTES = 5;
+/** In-game seconds per real second: 2 in-game hours play out in 5 real minutes. */
+export const TIME_SCALE = (BASE_MINUTES * 60) / (REAL_MINUTES * 60);
 export const GUARD_STEP_MS = 520;
 export const GUARD_VISION = 3;
 export const CAUGHT_PENALTY_MINUTES = 10;
@@ -35,6 +39,10 @@ export interface RunConfig {
   upgrades: UpgradeLevels;
   /** Blueprints not yet unlocked; one may appear as a pickup this run. */
   lockedBlueprints: UpgradeId[];
+  /** Which pass through the two hours this is (1 = first). */
+  loop?: number;
+  /** Play the hand-built Fort Santiago lesson instead of a generated loop. */
+  tutorial?: boolean;
 }
 
 export interface RunStats {
@@ -79,6 +87,8 @@ export class Run {
   readonly scanner: boolean;
   private readonly almanac: boolean;
   private readonly guardStepMs: number;
+  readonly tutorial: Tutorial | null;
+  guide: Entity | null = null;
 
   charges: number;
   hearts: number;
@@ -97,22 +107,26 @@ export class Run {
   };
 
   constructor(readonly config: RunConfig) {
-    const lvl = (id: UpgradeId) => config.upgrades[id] ?? 0;
+    // Workshop upgrades don't apply to the lesson.
+    const lvl = (id: UpgradeId) => (config.tutorial ? 0 : (config.upgrades[id] ?? 0));
     this.rng = new Rng(config.seed ^ 0x5bd1e995);
-    this.level = generateLevel(config.seed, {
-      npcProfiles: NPC_PROFILES.map((p) => p.id),
-      withBlueprint: config.lockedBlueprints.length > 0,
-    });
+    this.tutorial = config.tutorial ? new Tutorial() : null;
+    this.level = config.tutorial
+      ? buildTutorialLevel()
+      : generateLevel(config.seed, {
+          npcProfiles: NPC_PROFILES.map((p) => p.id),
+          withBlueprint: config.lockedBlueprints.length > 0,
+        });
     this.map = this.level.map;
     this.puzzles = new PuzzleSystem(this.world, this.map);
     this.timer = new CountdownTimer((BASE_MINUTES + 10 * lvl('chronometer')) * 60, TIME_SCALE);
-    this.charges = 2 + lvl('capacitor');
+    this.charges = (config.tutorial ? 1 : 2) + lvl('capacitor');
     this.maxCharges = 5 + lvl('capacitor');
     this.maxHearts = 3 + lvl('barong');
     this.hearts = this.maxHearts;
     this.scanner = lvl('scanner') > 0;
     this.almanac = lvl('almanac') > 0;
-    this.guardStepMs = lvl('sundial') > 0 ? GUARD_STEP_MS * 1.35 : GUARD_STEP_MS;
+    this.guardStepMs = config.tutorial ? 700 : lvl('sundial') > 0 ? GUARD_STEP_MS * 1.35 : GUARD_STEP_MS;
 
     this.player = this.world.create();
     this.world
@@ -128,8 +142,20 @@ export class Run {
       .add(this.delorean, 'renderable', { sprite: 'delorean', layer: 5 });
 
     this.spawnLevelEntities();
-    this.log(`August 23, 1896, ${this.level.district}. Two hours until the Cry of Pugad Lawin.`);
-    this.log('Your DeLorean is wrecked. Recover all 4 components and bring them back to it (E).');
+    if (this.tutorial) {
+      this.log('Fort Santiago, Manila. 29 December 1896, the night before José Rizal\'s execution.');
+      this.log('Your DeLorean\'s first jump went astray, and it came down hard inside the fort.');
+      this.log(`Dr. Rizal: "${TUTORIAL_STEPS[0].rizal}"`);
+    } else {
+      const loop = config.loop ?? 1;
+      if (loop === 1) {
+        this.log(`August 23, 1896, ${this.level.district}. Two hours until the Cry of Pugad Lawin.`);
+        this.log('Your DeLorean is wrecked. Recover all 4 components and bring them back to it (E).');
+      } else {
+        this.log(`August 23, 1896, ${this.level.district}. Two hours until the Cry of Pugad Lawin. Again. (Loop ${loop})`);
+        this.log('The loop has reset, and so has the DeLorean. Recover all 4 components (E to install).');
+      }
+    }
   }
 
   private spawnLevelEntities(): void {
@@ -152,7 +178,7 @@ export class Run {
     for (const c of level.components) {
       if (c.strategy === 'crate') {
         this.spawnCrate(c.pos, { type: 'item', item: makeComponentItem(c.id, false) });
-      } else if (c.strategy === 'compound' || c.strategy === 'damaged') {
+      } else if (c.strategy === 'compound' || c.strategy === 'damaged' || c.strategy === 'loose') {
         this.spawnPickup(c.pos, { type: 'item', item: makeComponentItem(c.id, c.strategy === 'damaged') });
       }
     }
@@ -164,6 +190,7 @@ export class Run {
 
     for (const n of level.npcs) {
       const e = world.create();
+      if (n.profileId === 'rizal') this.guide = e;
       world
         .add(e, 'position', { ...n.pos })
         .add(e, 'solid', true)
@@ -174,7 +201,11 @@ export class Run {
           reward: this.rng.chance(0.5) ? 'charge' : 'time',
           askedQuestions: [],
         })
-        .add(e, 'renderable', { sprite: 'npc', layer: 6, tint: profileById(n.profileId).color });
+        .add(e, 'renderable', {
+          sprite: n.profileId === 'rizal' ? 'guide' : 'npc',
+          layer: 6,
+          tint: profileById(n.profileId).color,
+        });
     }
 
     for (const route of level.guards) {
@@ -255,7 +286,8 @@ export class Run {
   update(dtMs: number): void {
     if (this.outcome || this.dialogue) return;
     this.elapsedMs += dtMs;
-    this.timer.update(dtMs);
+    // The lesson has no clock.
+    if (!this.tutorial) this.timer.update(dtMs);
     if (this.timer.expired) {
       this.finish(false, 'The Cry of Pugad Lawin rings out. The timeline seals shut, and you are stranded in 1896.');
       return;
@@ -263,6 +295,7 @@ export class Run {
     this.invulnerableMs = Math.max(0, this.invulnerableMs - dtMs);
     this.updateGuards(dtMs);
     this.checkDetection();
+    this.advanceTutorial();
   }
 
   private updateGuards(dtMs: number): void {
@@ -306,6 +339,17 @@ export class Run {
   }
 
   private caught(guardEntity: Entity): void {
+    if (this.tutorial) {
+      // The lesson never costs hearts or time; the sentry just marches you back.
+      this.world.req(guardEntity, 'guard').stunnedMs = 1500;
+      const pos = this.playerPos;
+      pos.x = TUTORIAL_CHECKPOINT.x;
+      pos.y = TUTORIAL_CHECKPOINT.y;
+      this.invulnerableMs = 1500;
+      this.stats.timesCaught += 1;
+      this.log('¡Alto! The sentry marches you back to the bamboo. Dr. Rizal: "Behind his back, amigo. Watch the red."');
+      return;
+    }
     this.hearts -= 1;
     this.stats.timesCaught += 1;
     this.timer.penalize(CAUGHT_PENALTY_MINUTES);
@@ -360,6 +404,7 @@ export class Run {
       default:
         break;
     }
+    this.advanceTutorial();
   }
 
   move(dir: Dir): void {
@@ -447,6 +492,19 @@ export class Run {
   private talk(e: Entity): void {
     const npc = this.world.req(e, 'npc');
     const profile = profileById(npc.profileId);
+    if (this.tutorial && e === this.guide && !npc.solved) {
+      const step = this.tutorial.step;
+      if (step?.id === 'talk') {
+        this.tutorial.talkedToGuide = true;
+        return;
+      }
+      if (step && step.id !== 'question') {
+        this.log(`Dr. Rizal: "${step.rizal}"`);
+        return;
+      }
+      // Cycle his questions so a wrong answer always gets a fresh try.
+      if (profile.questionIds.every((id) => npc.askedQuestions.includes(id))) npc.askedQuestions = [];
+    }
     if (npc.solved) {
       this.log(`${profile.name}: "Mabuhay ang Katipunan! May you find your way home."`);
       return;
@@ -502,6 +560,12 @@ export class Run {
       }
       dlg.result = { correct: true, text: `${profile.thanks}\n${reward}\n${dlg.question.fact}` };
       this.log(`${profile.name} trusts you. ${reward}`);
+    } else if (this.tutorial) {
+      dlg.result = {
+        correct: false,
+        text: `Dr. Rizal smiles. "Not quite. Ask me again; out there it will cost you ${WRONG_ANSWER_PENALTY_MINUTES} minutes."\n${dlg.question.fact}`,
+      };
+      this.log('Not quite. Talk to Dr. Rizal again for another question.');
     } else {
       this.timer.penalize(WRONG_ANSWER_PENALTY_MINUTES);
       dlg.result = {
@@ -534,6 +598,11 @@ export class Run {
       this.stats.timeShifts += 1;
     }
     this.log(result.message);
+    if (this.tutorial && this.charges === 0 && this.tutorial.step?.id !== 'install') {
+      // Never let a lesson soft-lock on an empty capacitor.
+      this.charges = 1;
+      this.log('Dr. Rizal presses a pink stone into your hand: +1 charge. "I kept one. For emergencies."');
+    }
   }
 
   installComponents(): void {
@@ -548,7 +617,9 @@ export class Run {
     if (d.installed.length === COMPONENT_IDS.length) {
       this.finish(
         true,
-        'The Flux Condenser flares. At 88 miles per hour the DeLorean tears through time, back to the present.',
+        this.tutorial
+          ? 'The DeLorean roars out of Fort Santiago. Behind you, Rizal lifts a hand, as if he knows exactly where you are headed. Then the flux condenser slips.'
+          : 'The Flux Condenser flares and the loop finally breaks. At 88 miles per hour the DeLorean tears through time, back to the present.',
       );
       return;
     }
@@ -559,6 +630,81 @@ export class Run {
       this.log(`The ${cracked[0].name} is cracked and won't fit. Select it and press R to rewind the damage.`);
     } else {
       this.log(`The DeLorean still needs: ${missing.join(', ')}.`);
+    }
+  }
+
+  // ---------------------------------------------------------------- tutorial
+
+  /** Whether the world already satisfies a lesson step (so steps can be done in any order). */
+  tutorialStepDone(id: TutorialStepId): boolean {
+    const have = (c: ComponentId, pristine = false) =>
+      this.installed.includes(c) ||
+      this.inventory.components().some((i) => i.componentId === c && (!pristine || isPristine(i)));
+    const timeState = (kind: 'bridge' | 'gate') => {
+      const e = this.world.query('timeObject').find((x) => this.world.req(x, 'timeObject').kind === kind);
+      return e === undefined ? null : stateId(this.world.req(e, 'timeObject').state);
+    };
+    switch (id) {
+      case 'talk':
+        return this.tutorial?.talkedToGuide ?? false;
+      case 'shard':
+        return !this.world.query('pickup').some((e) => this.world.req(e, 'pickup').payload.type === 'charge');
+      case 'bridge':
+        return timeState('bridge') === 'intact';
+      case 'crate':
+        return have('flux');
+      case 'gate':
+        return timeState('gate') === 'rusted' || have('coil');
+      case 'repair':
+        return have('coil', true);
+      case 'question':
+        return this.guide !== null && this.world.req(this.guide, 'npc').solved;
+      case 'patrol':
+        return have('cell');
+      case 'install':
+        return this.outcome?.victory ?? false;
+    }
+  }
+
+  /** Move the lesson forward past every step the world already satisfies. */
+  advanceTutorial(): void {
+    const t = this.tutorial;
+    if (!t || this.outcome) return;
+    let advanced = false;
+    while (t.step && this.tutorialStepDone(t.step.id)) {
+      t.index += 1;
+      advanced = true;
+    }
+    if (!advanced || !t.step) return;
+    this.log(`Dr. Rizal: "${t.step.rizal}"`);
+    this.moveGuide(t.step.guidePos);
+  }
+
+  /** Move Rizal to the free tile nearest `target`. */
+  private moveGuide(target: Point): void {
+    if (this.guide === null) return;
+    const pos = this.world.req(this.guide, 'position');
+    const free = (p: Point) =>
+      this.map.isPassable(p.x, p.y) &&
+      !samePoint(p, this.playerPos) &&
+      this.world.at(p).every((e) => e === this.guide || (!this.world.has(e, 'solid') && !this.world.has(e, 'pickup')));
+    const queue = [target];
+    const seen = new Set([`${target.x},${target.y}`]);
+    while (queue.length) {
+      const p = queue.shift()!;
+      if (free(p)) {
+        pos.x = p.x;
+        pos.y = p.y;
+        return;
+      }
+      for (const d of DIR_LIST) {
+        const n = addPoint(p, DIRS[d]);
+        const k = `${n.x},${n.y}`;
+        if (!seen.has(k) && this.map.inBounds(n.x, n.y)) {
+          seen.add(k);
+          queue.push(n);
+        }
+      }
     }
   }
 
