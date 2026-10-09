@@ -1,4 +1,5 @@
 /** Persistent progression that survives permadeath: blueprints, upgrades, currency. */
+import { ACHIEVEMENTS, type AchievementId } from './Achievements';
 
 export type UpgradeId = 'capacitor' | 'chronometer' | 'barong' | 'almanac' | 'scanner' | 'sundial';
 
@@ -79,6 +80,9 @@ export interface MetaData {
   runs: number;
   wins: number;
   tutorialDone: boolean;
+  achievements: AchievementId[];
+  /** Fastest win in real ms, or null before the first win. */
+  bestWinMs: number | null;
 }
 
 export interface KeyValueStore {
@@ -89,7 +93,7 @@ export interface KeyValueStore {
 const STORAGE_KEY = 'chrono-katipunan/meta/v1';
 
 function freshData(): MetaData {
-  return { version: 1, chronotons: 0, blueprints: [], upgrades: {}, runs: 0, wins: 0, tutorialDone: false };
+  return { version: 1, chronotons: 0, blueprints: [], upgrades: {}, runs: 0, wins: 0, tutorialDone: false, achievements: [], bestWinMs: null };
 }
 
 export class MetaProgress {
@@ -112,6 +116,7 @@ export class MetaProgress {
         ...parsed,
         blueprints: (parsed.blueprints ?? []).filter((b) => known.has(b)),
         upgrades: { ...(parsed.upgrades ?? {}) },
+        achievements: (parsed.achievements ?? []).filter((a) => ACHIEVEMENTS.some((x) => x.id === a)),
       };
     } catch {
       return freshData();
@@ -177,6 +182,23 @@ export class MetaProgress {
   /** New players start with the lesson; everyone else goes straight into the loop. */
   get shouldOfferTutorial(): boolean {
     return !this.data.tutorialDone && this.data.runs === 0;
+  }
+
+  hasAchievement(id: AchievementId): boolean {
+    return this.data.achievements.includes(id);
+  }
+
+  /** Unlock achievements; returns only the ones that are new. */
+  unlockAchievements(ids: AchievementId[]): AchievementId[] {
+    const fresh = ids.filter((id) => !this.data.achievements.includes(id));
+    this.data.achievements.push(...fresh);
+    if (fresh.length) this.save();
+    return fresh;
+  }
+
+  recordWinTime(ms: number): void {
+    if (this.data.bestWinMs === null || ms < this.data.bestWinMs) this.data.bestWinMs = ms;
+    this.save();
   }
 
   recordRun(victory: boolean, chronotonsEarned: number, blueprints: UpgradeId[]): void {

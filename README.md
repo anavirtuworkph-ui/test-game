@@ -62,13 +62,42 @@ The river can only be crossed by **rewinding** one of its collapsed bridges.
 
 * The countdown reaches zero: 2 in-game hours that pass in **5 real minutes** (the HUD shows
   both clocks), or
-* you're spotted by Guardia Civil patrols (red tiles show their sight) too many times. Each
-  sighting costs a heart and 10 minutes and sends you back to the DeLorean.
+* you're caught by Guardia Civil patrols (red tiles show their sight) too many times. Each
+  capture costs a heart and 10 minutes and sends you back to the DeLorean.
+
+### Dodging the Guardia Civil
+
+Being seen isn't the same as being caught. When a patrol spots you, the world freezes and
+**¡ALTO!** appears with an arrow and a draining ring: press that arrow within **1 second**
+(a fresh key press; holding a key doesn't count) to dive 2 tiles aside. The game picks a
+direction that lands you out of sight where it can, and the green tiles show where you'll land.
+The guard stands confused for 2.5 seconds. Pressing the wrong arrow, or nothing, gets you caught.
+
+A dive leaves you **winded for 5 seconds** (shown under your hearts). Get spotted again in that
+window and there's no dodge, just a capture. If you're boxed in with nowhere to dive, you're
+caught as well.
 
 Death is permanent and the next run is a new map. **Chronotons** earned during a run, and any
 **blueprints** you found, carry over. Spend them in the DeLorean Workshop on persistent upgrades:
 extra charge, more time, a disguise (extra heart), an almanac that strikes out wrong answers,
 a scanner that reveals components, or a sundial that slows patrols.
+
+## Achievements
+
+Shown on the workshop screen, unlocked at the end of a loop (the tutorial never counts), and
+saved with your other progress.
+
+| Achievement | How to earn it |
+| --- | --- |
+| Back to The Present | Win for the first time |
+| Lost to Time | Lose for the first time |
+| I Need Popcorn for This! | Lose to the timer |
+| Quick Reflexes | Win in 3:00 or less |
+| Speedrunner | Win in 1:30 or less |
+| Hardcore Looper | Reach 50 loops |
+
+Win times are **real** time from the start of the loop, including time spent in conversations
+and dodge prompts. Your best win time is shown on the workshop and result screens.
 
 ## Architecture
 
@@ -77,7 +106,8 @@ src/
   core/
     GameState.ts          Phase state machine: start -> playing -> victory/defeat; meta rewards
     InputController.ts    Keyboard/touch -> Action queue, held-key repeat
-    MetaProgress.ts       Persistent blueprints, upgrades and currency (localStorage)
+    MetaProgress.ts       Persistent blueprints, upgrades, currency, achievements (localStorage)
+    Achievements.ts       The six achievements and the rules for earning them
     CountdownTimer.ts     Scaled in-game countdown with penalties/bonuses
     Rng.ts, types.ts      Seeded PRNG (every run reproducible from its seed), shared types
   ecs/
@@ -92,7 +122,7 @@ src/
     PuzzleSystem.ts       Timeline-based rewind/fast-forward for objects and items; knowledge checks
     HistoryData.ts        Question bank, historical NPC profiles, Rizal's tutorial questions
   game/
-    Run.ts                One loop (or the lesson): movement, interaction, patrols, detection, win/lose
+    Run.ts                One loop (or the lesson): movement, interaction, patrols, dodging, win/lose
     Tutorial.ts           The nine lesson steps and Rizal's lines
     Inventory.ts          Satchel slots and component items
   render/

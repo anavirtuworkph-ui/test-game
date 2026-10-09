@@ -1,9 +1,10 @@
+import { ACHIEVEMENTS, achievementDef, formatRealMs } from '../core/Achievements';
 import type { GameState } from '../core/GameState';
 import { UPGRADES } from '../core/MetaProgress';
 import { COMPONENT_IDS, COMPONENT_NAMES, DIRS, type Dir } from '../core/types';
 import type { Entity } from '../ecs/EntityComponentSystem';
 import { isPristine, type Item } from '../game/Inventory';
-import type { Run } from '../game/Run';
+import { DODGE_WINDOW_MS, type Run } from '../game/Run';
 import { profileById } from '../puzzles/HistoryData';
 import { stateId } from '../puzzles/PuzzleSystem';
 import { MAP_HEIGHT, MAP_WIDTH } from '../world/MapGenerator';
@@ -153,28 +154,33 @@ export class Renderer {
     this.panel(24, 108, 452, 404);
     let y = this.paragraph(
       'Your homemade DeLorean worked... too well. Its flux condenser slipped and stranded you on 23 August 1896, two hours before the Cry of Pugad Lawin starts the Philippine Revolution. Every time those two hours run out, they begin again.',
-      40, 124, 420, 13,
+      40, 122, 420, 12, C.ink, 16,
     );
     y = this.paragraph(
       'Each loop scatters the machine\'s four components across a new district. Rewind or fast-forward the world, win the trust of the Katipunan with what you know of their history, and avoid the Guardia Civil. Rebuild the DeLorean before the Cry to break the loop.',
-      40, y + 8, 420, 13,
+      40, y + 6, 420, 12, C.ink, 16,
     );
-    y += 12;
-    this.text('CONTROLS', 40, y, 13, C.gold, 'left', true);
-    y += 22;
-    const controls: [string, string][] = [
-      ['WASD / Arrows', 'move'],
-      ['E / Space', 'talk, inspect, install at DeLorean'],
-      ['R', 'rewind adjacent object (or selected item)'],
-      ['F', 'fast-forward adjacent object'],
-      ['1-8', 'select item / answer questions'],
-      ['Esc', 'leave a conversation'],
-    ];
-    for (const [k, v] of controls) {
-      this.text(k, 40, y, 12, C.accent);
-      this.text(v, 180, y, 12, C.ink);
-      y += 19;
+    y += 10;
+
+    // Achievements
+    const got = meta.data.achievements.length;
+    this.text(`ACHIEVEMENTS  ${got}/${ACHIEVEMENTS.length}`, 40, y, 13, C.gold, 'left', true);
+    if (meta.data.bestWinMs !== null) {
+      this.text(`best win ${formatRealMs(meta.data.bestWinMs)}`, 460, y + 1, 11, C.accent, 'right');
     }
+    y += 22;
+    ACHIEVEMENTS.forEach((a, i) => {
+      const ax = 40 + (i % 2) * 214;
+      const ay = y + Math.floor(i / 2) * 33;
+      const unlocked = meta.hasAchievement(a.id);
+      this.text(unlocked ? '★' : '☆', ax, ay, 14, unlocked ? C.gold : C.faint, 'left', true);
+      this.text(a.title, ax + 18, ay, 12, unlocked ? C.ink : C.faint, 'left', true);
+      this.text(a.description, ax + 18, ay + 16, 10, unlocked ? C.dim : C.faint);
+    });
+    y += 3 * 33 + 6;
+    this.text('CONTROLS', 40, y, 11, C.gold, 'left', true);
+    this.text('WASD move · E talk/install · R rewind · F fast-forward', 40, y + 15, 11, C.dim);
+    this.text('1-8 items and answers · ¡Alto!: press the arrow shown', 40, y + 30, 11, C.dim);
 
     // Workshop (meta-progression)
     const wx = 496;
@@ -234,29 +240,52 @@ export class Renderer {
       return;
     }
     this.drawVortex(CANVAS_W / 2, CANVAS_H / 2, victory ? 0.35 : 0.1);
-    this.text(victory ? 'BACK TO THE PRESENT' : 'LOST IN 1896', CANVAS_W / 2, 70, 40, victory ? C.accent : C.danger, 'center', true);
-    this.panel(CANVAS_W / 2 - 300, 140, 600, 330);
-    let y = this.paragraph(s.outcome.reason, CANVAS_W / 2 - 276, 160, 552, 14);
-    y += 14;
+    const title = victory ? 'BACK TO THE PRESENT' : s.outcome.cause === 'timer' ? 'THE LOOP RESETS' : 'ARRESTED';
+    this.text(title, CANVAS_W / 2, 50, 36, victory ? C.accent : C.danger, 'center', true);
+    const px = CANVAS_W / 2 - 300;
+    const reason = this.wrap(s.outcome.reason, 552, 14);
     const rows: [string, string][] = [
       ['District', `${s.district} (seed ${s.seed})`],
-      ['Time left', s.timeLeft],
-      ['Components recovered', `${s.stats.componentsCollected} / 4`],
-      ['Components installed', `${s.stats.componentsInstalled} / 4`],
+      ['Real time', `${formatRealMs(s.realMs)}${victory && state.meta.data.bestWinMs !== null ? `   (best ${formatRealMs(state.meta.data.bestWinMs)})` : ''}`],
+      ['In-game time left', s.timeLeft],
+      ['Components found / installed', `${s.stats.componentsCollected} / ${s.stats.componentsInstalled}`],
       ['History puzzles solved', String(s.stats.puzzlesSolved)],
       ['Time shifts used', String(s.stats.timeShifts)],
-      ['Times caught', String(s.stats.timesCaught)],
+      ['Dodges / times caught', `${s.stats.dodges} / ${s.stats.timesCaught}`],
       ['Blueprints found', s.stats.blueprints.length ? s.stats.blueprints.join(', ') : 'none'],
     ];
-    for (const [k, v] of rows) {
-      this.text(k, CANVAS_W / 2 - 276, y, 13, C.dim);
-      this.text(v, CANVAS_W / 2 + 276, y, 13, C.ink, 'right');
-      y += 22;
+    const achH = s.newAchievements.length ? 30 + s.newAchievements.length * 24 : 0;
+    const h = 20 + reason.length * 19 + 12 + rows.length * 21 + 36 + achH + 8;
+    this.panel(px, 104, 600, h);
+    let y = 124;
+    for (const line of reason) {
+      this.text(line, px + 24, y, 14, C.ink);
+      y += 19;
     }
-    this.text(`+${s.chronotonsEarned} chronotons for the workshop`, CANVAS_W / 2, y + 10, 15, C.magenta, 'center', true);
-    if (!victory) this.text('Permadeath: the next loop is a brand-new district. Upgrades persist.', CANVAS_W / 2, 486, 12, C.dim, 'center');
+    y += 12;
+    for (const [k, v] of rows) {
+      this.text(k, px + 24, y, 13, C.dim);
+      this.text(v, px + 576, y, 13, C.ink, 'right');
+      y += 21;
+    }
+    this.text(`+${s.chronotonsEarned} chronotons for the workshop`, CANVAS_W / 2, y + 8, 15, C.magenta, 'center', true);
+    y += 36;
+    if (s.newAchievements.length) {
+      const glow = 0.5 + 0.5 * Math.sin(this.time / 220);
+      this.ctx.fillStyle = `rgba(240,192,74,${0.08 + glow * 0.08})`;
+      this.ctx.fillRect(px + 12, y - 4, 576, achH);
+      this.text('ACHIEVEMENT UNLOCKED', CANVAS_W / 2, y + 2, 12, C.gold, 'center', true);
+      y += 26;
+      for (const id of s.newAchievements) {
+        const a = achievementDef(id);
+        this.text(`★ ${a.title}`, px + 40, y, 14, C.gold, 'left', true);
+        this.text(a.description, px + 576, y + 2, 11, C.dim, 'right');
+        y += 24;
+      }
+    }
+    if (!victory) this.text('Permadeath: the next loop is a brand-new district. Upgrades persist.', CANVAS_W / 2, 536, 12, C.dim, 'center');
     if (Math.floor(this.time / 600) % 2 === 0) {
-      this.text('Press ENTER or SPACE to return to the workshop', CANVAS_W / 2, 530, 16, C.gold, 'center', true);
+      this.text('Press ENTER or SPACE to return to the workshop', CANVAS_W / 2, 560, 16, C.gold, 'center', true);
     }
   }
 
@@ -307,6 +336,7 @@ export class Renderer {
     this.drawLog(run);
     if (run.tutorial && !run.dialogue) this.drawLessonBanner(run);
     if (run.dialogue) this.drawDialogue(run);
+    if (run.dodge) this.drawDodge(run);
   }
 
   private drawTiles(run: Run): void {
@@ -803,6 +833,11 @@ export class Renderer {
       this.text('♥', hx, 131, 18, i < run.hearts ? C.danger : '#3b2a22');
       hx += 20;
     }
+    if (run.dodgeCooldownMs > 0) {
+      this.text(`winded ${(run.dodgeCooldownMs / 1000).toFixed(1)}s`, left, 151, 10, C.danger);
+    } else {
+      this.text('dodge ready', left, 151, 10, C.ok);
+    }
     this.text('TEMPORAL CHARGE', left + 110, 118, 10, C.dim);
     for (let i = 0; i < run.maxCharges; i++) {
       ctx.fillStyle = i < run.charges ? C.magenta : '#3b2a33';
@@ -876,6 +911,47 @@ export class Renderer {
       y += 15;
     }
     this.text('Red tiles: patrol sight', left, y + 4, 10, '#d9786a');
+  }
+
+  /** "¡ALTO!" prompt: the arrow to press and a ring that drains as the window closes. */
+  private drawDodge(run: Run): void {
+    const dodge = run.dodge!;
+    const { ctx } = this;
+    const frac = Math.max(0, dodge.remainingMs / DODGE_WINDOW_MS);
+    ctx.fillStyle = `rgba(120,0,0,${0.25 + 0.1 * Math.sin(this.time / 60)})`;
+    ctx.fillRect(0, 0, MAP_PX_W, MAP_PX_H);
+
+    const p = run.playerPos;
+    const cx = p.x * TILE + TILE / 2;
+    const cy = p.y * TILE + TILE / 2;
+    // Highlight the landing path.
+    ctx.fillStyle = 'rgba(123,211,106,0.35)';
+    for (const t of run.dodgePath(dodge.dir)) ctx.fillRect(t.x * TILE + 2, t.y * TILE + 2, TILE - 4, TILE - 4);
+    ctx.strokeStyle = C.gold;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(p.x * TILE + 1, p.y * TILE + 1, TILE - 2, TILE - 2);
+
+    // Prompt box, kept on the map.
+    const bx = Math.min(MAP_PX_W - 50, Math.max(50, cx));
+    const by = cy - 70 < 40 ? cy + 70 : cy - 70;
+    ctx.fillStyle = 'rgba(16,12,10,0.92)';
+    ctx.beginPath();
+    ctx.arc(bx, by, 34, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#3b2a22';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(bx, by, 30, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = frac > 0.35 ? C.gold : C.danger;
+    ctx.beginPath();
+    ctx.arc(bx, by, 30, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
+    ctx.stroke();
+    const arrow: Record<Dir, string> = { up: '↑', down: '↓', left: '←', right: '→' };
+    this.text(arrow[dodge.dir], bx, by - 17, 30, C.ink, 'center', true);
+    const above = by < cy;
+    this.text('¡ALTO!', bx, above ? by - 62 : by + 54, 18, C.danger, 'center', true);
+    this.text(`press ${dodge.dir.toUpperCase()} to dodge`, bx, above ? by + 38 : by - 50, 11, C.gold, 'center', true);
   }
 
   /** Objective and Rizal's current line, pinned over the river at the top of the map. */

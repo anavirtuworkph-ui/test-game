@@ -1,3 +1,4 @@
+import type { OutcomeCause } from '../core/Achievements';
 import { CountdownTimer } from '../core/CountdownTimer';
 import type { Action } from '../core/InputController';
 import type { UpgradeId, UpgradeLevels } from '../core/MetaProgress';
@@ -33,6 +34,13 @@ export const GUARD_STEP_MS = 520;
 export const GUARD_VISION = 3;
 export const CAUGHT_PENALTY_MINUTES = 10;
 export const WRONG_ANSWER_PENALTY_MINUTES = 5;
+/** Real ms the player has to hit the dodge prompt once spotted. */
+export const DODGE_WINDOW_MS = 1000;
+/** After a dodge the inventor is winded: a sighting in this window is an instant capture. */
+export const DODGE_COOLDOWN_MS = 5000;
+export const DODGE_DISTANCE = 2;
+/** How long a dodged guard stands confused. */
+export const DODGE_STUN_MS = 2500;
 
 export interface RunConfig {
   seed: number;
@@ -51,12 +59,21 @@ export interface RunStats {
   puzzlesSolved: number;
   timeShifts: number;
   timesCaught: number;
+  dodges: number;
   blueprints: UpgradeId[];
 }
 
 export interface RunOutcome {
   victory: boolean;
+  cause: OutcomeCause;
   reason: string;
+}
+
+/** A patrol has spotted the player: the world freezes until they dodge or the window closes. */
+export interface DodgeChallenge {
+  guard: Entity;
+  dir: Dir;
+  remainingMs: number;
 }
 
 export interface Dialogue {
@@ -95,14 +112,20 @@ export class Run {
   dialogue: Dialogue | null = null;
   outcome: RunOutcome | null = null;
   messages: LogMessage[] = [];
+  /** Unpaused play time (drives the countdown and message ages). */
   elapsedMs = 0;
+  /** Wall-clock time in the loop, dialogue and dodge prompts included (for speed achievements). */
+  realMs = 0;
   invulnerableMs = 0;
+  dodge: DodgeChallenge | null = null;
+  dodgeCooldownMs = 0;
   readonly stats: RunStats = {
     componentsCollected: 0,
     componentsInstalled: 0,
     puzzlesSolved: 0,
     timeShifts: 0,
     timesCaught: 0,
+    dodges: 0,
     blueprints: [],
   };
 
@@ -284,12 +307,21 @@ export class Run {
   // ---------------------------------------------------------------- loop
 
   update(dtMs: number): void {
-    if (this.outcome || this.dialogue) return;
+    if (this.outcome) return;
+    this.realMs += dtMs;
+    if (this.dodge) {
+      // Time stands still while the player reacts.
+      this.dodge.remainingMs -= dtMs;
+      if (this.dodge.remainingMs <= 0) this.failDodge('Too slow!');
+      return;
+    }
+    if (this.dialogue) return;
     this.elapsedMs += dtMs;
+    this.dodgeCooldownMs = Math.max(0, this.dodgeCooldownMs - dtMs);
     // The lesson has no clock.
     if (!this.tutorial) this.timer.update(dtMs);
     if (this.timer.expired) {
-      this.finish(false, 'The Cry of Pugad Lawin rings out. The timeline seals shut, and you are stranded in 1896.');
+      this.finish(false, 'timer', 'The Cry of Pugad Lawin rings out. The two hours are spent, and the loop drags you back to their start.');
       return;
     }
     this.invulnerableMs = Math.max(0, this.invulnerableMs - dtMs);
@@ -325,20 +357,108 @@ export class Run {
   }
 
   private checkDetection(): void {
-    if (this.invulnerableMs > 0 || this.outcome) return;
+    if (this.invulnerableMs > 0 || this.outcome || this.dodge) return;
     const p = this.playerPos;
     for (const e of this.world.query('guard', 'position')) {
       const g = this.world.req(e, 'guard');
       if (g.stunnedMs > 0) continue;
       const gp = this.world.req(e, 'position');
       if (samePoint(gp, p) || this.guardVision(e).some((v) => samePoint(v, p))) {
-        this.caught(e);
+        this.spotted(e);
         return;
       }
     }
   }
 
+  /** A patrol sees the player: offer a dodge, unless they're still winded from the last one. */
+  private spotted(guard: Entity): void {
+    if (this.dodgeCooldownMs > 0) {
+      this.log('Still winded from your last dive. No strength left to dodge!');
+      this.caught(guard);
+      return;
+    }
+    const dir = this.chooseDodgeDir(guard);
+    if (!dir) {
+      this.log('Cornered. Nowhere to dodge!');
+      this.caught(guard);
+      return;
+    }
+    this.dodge = { guard, dir, remainingMs: DODGE_WINDOW_MS };
+    this.log(`¡ALTO! A Guardia Civil spots you. Press ${dir.toUpperCase()} to dodge!`);
+  }
+
+  /** Tiles a dodge in `dir` would cover, stopping at the first obstacle. */
+  dodgePath(dir: Dir): Point[] {
+    const path: Point[] = [];
+    let p = this.playerPos;
+    for (let i = 0; i < DODGE_DISTANCE; i++) {
+      const n = addPoint(p, DIRS[dir]);
+      if (this.isBlocked(n) || this.world.at(n, 'guard').length > 0) break;
+      path.push(n);
+      p = n;
+    }
+    return path;
+  }
+
+  /** Prefer a dive that lands out of every patrol's sight and away from the guard. */
+  private chooseDodgeDir(guard: Entity): Dir | null {
+    const gp = this.world.req(guard, 'position');
+    const seen = new Set(
+      this.world.query('guard').flatMap((g) => this.guardVision(g).map((v) => `${v.x},${v.y}`)),
+    );
+    let best: Dir[] = [];
+    let bestScore = -Infinity;
+    for (const d of DIR_LIST) {
+      const path = this.dodgePath(d);
+      if (path.length === 0) continue;
+      const land = path[path.length - 1];
+      const score =
+        (seen.has(`${land.x},${land.y}`) ? 0 : 100) + path.length * 10 + Math.abs(land.x - gp.x) + Math.abs(land.y - gp.y);
+      if (score > bestScore) {
+        bestScore = score;
+        best = [d];
+      } else if (score === bestScore) {
+        best.push(d);
+      }
+    }
+    return best.length ? this.rng.pick(best) : null;
+  }
+
+  private handleDodge(action: Action): void {
+    const dodge = this.dodge!;
+    // Only a fresh key press counts, so a key held while walking can't dodge (or fail) by accident.
+    if (action.type !== 'move' || action.repeat) return;
+    if (action.dir !== dodge.dir) {
+      this.failDodge('Wrong way!');
+      return;
+    }
+    this.dodge = null;
+    const path = this.dodgePath(dodge.dir);
+    const pos = this.playerPos;
+    for (const step of path) {
+      pos.x = step.x;
+      pos.y = step.y;
+      for (const e of this.world.at(step, 'pickup')) this.collect(e);
+    }
+    this.world.req(this.player, 'facing').dir = dodge.dir;
+    if (this.world.isAlive(dodge.guard)) this.world.req(dodge.guard, 'guard').stunnedMs = DODGE_STUN_MS;
+    this.dodgeCooldownMs = DODGE_COOLDOWN_MS;
+    this.invulnerableMs = 600;
+    this.stats.dodges += 1;
+    this.log('You dive aside! The guard blinks at empty air. (Winded for 5 seconds: avoid patrols.)');
+  }
+
+  private failDodge(why: string): void {
+    const dodge = this.dodge;
+    this.dodge = null;
+    if (!dodge) return;
+    this.log(why);
+    this.caught(dodge.guard);
+  }
+
   private caught(guardEntity: Entity): void {
+    this.dodge = null;
+    this.dodgeCooldownMs = 0;
     if (this.tutorial) {
       // The lesson never costs hearts or time; the sentry just marches you back.
       this.world.req(guardEntity, 'guard').stunnedMs = 1500;
@@ -354,7 +474,7 @@ export class Run {
     this.stats.timesCaught += 1;
     this.timer.penalize(CAUGHT_PENALTY_MINUTES);
     if (this.hearts <= 0) {
-      this.finish(false, 'Arrested by the Guardia Civil as a suspected Katipunero. Your machine is lost to history.');
+      this.finish(false, 'arrested', 'Arrested by the Guardia Civil as a suspected Katipunero. The loop resets with you in its grip.');
       return;
     }
     this.world.req(guardEntity, 'guard').stunnedMs = 2000;
@@ -365,16 +485,21 @@ export class Run {
     this.log(`¡Alto! A Guardia Civil patrol drags you back to your machine. (-${CAUGHT_PENALTY_MINUTES} min, -1 heart)`);
   }
 
-  private finish(victory: boolean, reason: string): void {
+  private finish(victory: boolean, cause: OutcomeCause, reason: string): void {
     if (this.outcome) return;
-    this.outcome = { victory, reason };
+    this.outcome = { victory, cause, reason };
     this.dialogue = null;
+    this.dodge = null;
   }
 
   // ---------------------------------------------------------------- actions
 
   handle(action: Action): void {
     if (this.outcome) return;
+    if (this.dodge) {
+      this.handleDodge(action);
+      return;
+    }
     if (this.dialogue) {
       this.handleDialogue(action);
       return;
@@ -617,6 +742,7 @@ export class Run {
     if (d.installed.length === COMPONENT_IDS.length) {
       this.finish(
         true,
+        'escaped',
         this.tutorial
           ? 'The DeLorean roars out of Fort Santiago. Behind you, Rizal lifts a hand, as if he knows exactly where you are headed. Then the flux condenser slips.'
           : 'The Flux Condenser flares and the loop finally breaks. At 88 miles per hour the DeLorean tears through time, back to the present.',

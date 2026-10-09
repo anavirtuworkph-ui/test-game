@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { GameState } from '../src/core/GameState';
 import { MetaProgress } from '../src/core/MetaProgress';
 import { samePoint } from '../src/core/types';
-import { Run } from '../src/game/Run';
+import { DODGE_WINDOW_MS, Run } from '../src/game/Run';
 import { TUTORIAL_STEPS } from '../src/game/Tutorial';
 import { RIZAL, TUTORIAL_QUESTIONS } from '../src/puzzles/HistoryData';
 import { TUTORIAL_CHECKPOINT } from '../src/world/TutorialLevel';
@@ -90,6 +90,7 @@ describe('Fort Santiago tutorial', () => {
     p.x = gp.x;
     p.y = gp.y;
     run.update(1);
+    run.update(DODGE_WINDOW_MS);
     expect(run.hearts).toBe(run.maxHearts);
     expect(samePoint(run.playerPos, TUTORIAL_CHECKPOINT)).toBe(true);
   });

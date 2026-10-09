@@ -3,7 +3,7 @@ import { CountdownTimer } from '../src/core/CountdownTimer';
 import { GameState, computeReward } from '../src/core/GameState';
 import { InputController } from '../src/core/InputController';
 import { MetaProgress, type KeyValueStore } from '../src/core/MetaProgress';
-import { BASE_MINUTES, REAL_MINUTES, Run, TIME_SCALE } from '../src/game/Run';
+import { BASE_MINUTES, DODGE_WINDOW_MS, REAL_MINUTES, Run, TIME_SCALE } from '../src/game/Run';
 import { removeGuards, solve } from './solver';
 
 class MemoryStore implements KeyValueStore {
@@ -44,7 +44,7 @@ describe('InputController', () => {
       { type: 'select', slot: 2 },
     ]);
     input.update(400);
-    expect(input.drain()).toEqual([{ type: 'move', dir: 'up' }]);
+    expect(input.drain()).toEqual([{ type: 'move', dir: 'up', repeat: true }]);
     input.handleKeyUp('KeyW');
     input.update(400);
     expect(input.drain()).toEqual([]);
@@ -88,7 +88,9 @@ describe('Run', () => {
       const pp = run.world.req(run.player, 'position');
       pp.x = gp.x;
       pp.y = gp.y;
-      run.update(1);
+      run.update(1); // spotted: dodge prompt
+      expect(run.dodge).not.toBeNull();
+      run.update(DODGE_WINDOW_MS); // ...and the window closes
     }
     expect(run.stats.timesCaught).toBe(run.maxHearts);
     expect(run.outcome?.victory).toBe(false);
@@ -159,7 +161,7 @@ describe('GameState', () => {
   });
 
   it('rewards partial progress on defeat', () => {
-    const stats = { componentsCollected: 2, componentsInstalled: 1, puzzlesSolved: 1, timeShifts: 3, timesCaught: 1, blueprints: [] };
+    const stats = { componentsCollected: 2, componentsInstalled: 1, puzzlesSolved: 1, timeShifts: 3, timesCaught: 1, dodges: 0, blueprints: [] };
     expect(computeReward(stats, false, 0)).toBe(15);
     expect(computeReward({ ...stats, componentsCollected: 0, componentsInstalled: 0, puzzlesSolved: 0 }, false, 0)).toBe(1);
   });

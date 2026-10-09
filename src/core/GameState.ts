@@ -1,4 +1,5 @@
 import { Run, type RunOutcome, type RunStats } from '../game/Run';
+import { qualifyingAchievements, type AchievementId } from './Achievements';
 import type { Action } from './InputController';
 import { MetaProgress, UPGRADES, upgradeDef, type UpgradeId } from './MetaProgress';
 import { randomSeed } from './Rng';
@@ -13,6 +14,10 @@ export interface RunSummary {
   seed: number;
   district: string;
   tutorial: boolean;
+  /** Real time spent in the loop, in ms. */
+  realMs: number;
+  /** Achievements unlocked by this loop. */
+  newAchievements: AchievementId[];
 }
 
 /** Chronotons awarded at the end of a run; failed runs still pay out. */
@@ -135,6 +140,8 @@ export class GameState {
         seed: 0,
         district: run.level.district,
         tutorial: true,
+        realMs: run.realMs,
+        newAchievements: [],
       };
       this.phase = 'victory';
       this.resultLockMs = 900;
@@ -142,6 +149,15 @@ export class GameState {
     }
     const chronotonsEarned = computeReward(run.stats, victory, run.timer.remainingSeconds);
     this.meta.recordRun(victory, chronotonsEarned, run.stats.blueprints);
+    if (victory) this.meta.recordWinTime(run.realMs);
+    const newAchievements = this.meta.unlockAchievements(
+      qualifyingAchievements({
+        victory,
+        cause: run.outcome.cause,
+        realMs: run.realMs,
+        totalLoops: this.meta.data.runs,
+      }),
+    );
     this.summary = {
       outcome: run.outcome,
       stats: { ...run.stats },
@@ -150,6 +166,8 @@ export class GameState {
       seed: run.config.seed,
       district: run.level.district,
       tutorial: false,
+      realMs: run.realMs,
+      newAchievements,
     };
     this.phase = victory ? 'victory' : 'defeat';
     this.resultLockMs = 900;

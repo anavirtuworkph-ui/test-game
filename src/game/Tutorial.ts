@@ -78,7 +78,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     id: 'patrol',
     objective: 'Sneak past the sentry to the Lightning Cell. Stay out of the red tiles.',
     rizal:
-      'The red tiles are where that sentry can see. Cross behind his back. Tonight he only marches you back. Out there each sighting costs a heart and ten minutes.',
+      'The red tiles are where that sentry can see. Cross behind his back. If he spots you, an arrow appears: press it at once to dive aside. Tonight a failed dodge only marches you back; out there it costs a heart and ten minutes.',
     guidePos: { x: 22, y: 9 },
   },
   {
